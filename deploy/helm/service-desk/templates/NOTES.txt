@@ -1,0 +1,16 @@
+Service Desk is starting. Watch it with:
+
+  kubectl get pods -n {{ .Release.Namespace }} -w
+
+Then open:
+  App        {{ .Values.scheme }}://{{ .Values.hosts.app }}
+{{- if .Values.infrastructure.keycloak.enabled }}
+  Keycloak   {{ .Values.scheme }}://{{ .Values.hosts.auth }}   (admin / see values.secrets)
+{{- end }}
+{{- if .Values.infrastructure.mailpit.enabled }}
+  Mailbox    {{ .Values.scheme }}://{{ .Values.hosts.mail }}
+{{- end }}
+{{- if .Values.api.demoData }}
+
+Demo logins (password "password"): aina, farah, daniel, mei, siti, hafiz, kumar
+{{- end }}

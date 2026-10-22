@@ -1,0 +1,52 @@
+# One public address for the app: /api goes to the API, everything else to the web app.
+# Same origin means no CORS in the browser and one TLS certificate in production.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "sd.name" . }}
+  labels:
+    {{- include "sd.labels" . | nindent 4 }}
+  {{- with .Values.ingressAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingressClassName }}
+  rules:
+    - host: {{ .Values.hosts.app }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sd.name" . }}-api
+                port: { name: http }
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sd.name" . }}-web
+                port: { name: http }
+    {{- if .Values.infrastructure.keycloak.enabled }}
+    - host: {{ .Values.hosts.auth }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sd.name" . }}-keycloak
+                port: { name: http }
+    {{- end }}
+    {{- if .Values.infrastructure.mailpit.enabled }}
+    - host: {{ .Values.hosts.mail }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "sd.name" . }}-mailpit
+                port: { name: http }
+    {{- end }}

@@ -1,0 +1,120 @@
+{
+  "realm": "servicedesk",
+  "displayName": "Service Desk",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 28800,
+  "roles": {
+    "realm": [
+      { "name": "staff", "description": "Any employee. Can raise and follow their own requests." },
+      { "name": "agent", "description": "Works the queue of their support team." },
+      { "name": "security-approver", "description": "Approves access requests on behalf of IT Security." },
+      { "name": "service-manager", "description": "Sees the service dashboard and reports." }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "servicedesk-web",
+      "name": "Service Desk web app",
+      "description": "Browser app. Public client: Authorization Code flow with PKCE.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "rootUrl": "http://localhost:5173",
+      "redirectUris": ["http://localhost:5173/*", "http://servicedesk.localhost/*"],
+      "webOrigins": ["http://localhost:5173", "http://servicedesk.localhost"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*##http://servicedesk.localhost/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "servicedesk-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "servicedesk-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "servicedesk-dev-cli",
+      "name": "Local development only",
+      "description": "Lets developers get a token with curl (password grant). Never deploy this client outside local development.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "servicedesk-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "servicedesk-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "aina", "enabled": true, "emailVerified": true,
+      "email": "aina@example.com", "firstName": "Aina", "lastName": "Rahman",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["staff"]
+    },
+    {
+      "username": "farah", "enabled": true, "emailVerified": true,
+      "email": "farah@example.com", "firstName": "Farah", "lastName": "Aziz",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["staff"]
+    },
+    {
+      "username": "hafiz", "enabled": true, "emailVerified": true,
+      "email": "hafiz@example.com", "firstName": "Hafiz", "lastName": "Osman",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["staff"]
+    },
+    {
+      "username": "kumar", "enabled": true, "emailVerified": true,
+      "email": "kumar@example.com", "firstName": "Kumar", "lastName": "Raj",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["staff"]
+    },
+    {
+      "username": "daniel", "enabled": true, "emailVerified": true,
+      "email": "daniel@example.com", "firstName": "Daniel", "lastName": "Lee",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["staff", "agent", "security-approver"]
+    },
+    {
+      "username": "mei", "enabled": true, "emailVerified": true,
+      "email": "mei@example.com", "firstName": "Mei Ling", "lastName": "Tan",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["staff", "agent"]
+    },
+    {
+      "username": "siti", "enabled": true, "emailVerified": true,
+      "email": "siti@example.com", "firstName": "Siti", "lastName": "Hajar",
+      "credentials": [{ "type": "password", "value": "password", "temporary": false }],
+      "realmRoles": ["staff", "service-manager"]
+    }
+  ]
+}

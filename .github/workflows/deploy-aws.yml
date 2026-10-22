@@ -1,0 +1,89 @@
+name: Deploy to AWS
+
+# Run by hand from the Actions tab once the AWS infrastructure exists
+# (deploy/terraform/aws). GitHub signs in to AWS with OpenID Connect: no AWS keys are
+# stored in GitHub, only the ARN of a role that trusts this repository's main branch.
+#
+# Repository settings needed (Settings → Secrets and variables → Actions):
+#   variables: AWS_REGION, AWS_DEPLOY_ROLE_ARN, EKS_CLUSTER_NAME, ECR_REGISTRY,
+#              RDS_ENDPOINT, RDS_MASTER_SECRET_ARN, ATTACHMENTS_BUCKET,
+#              APP_HOST, AUTH_HOST, MAIL_HOST, ACM_CERTIFICATE_ARN
+#   secrets:   API_DB_PASSWORD, NOTIFICATIONS_DB_PASSWORD, KEYCLOAK_DB_PASSWORD,
+#              KEYCLOAK_ADMIN_PASSWORD
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-aws
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: aws
+    env:
+      TAG: ${{ github.sha }}
+      REGISTRY: ${{ vars.ECR_REGISTRY }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build and push images to ECR
+        run: |
+          for service in api notification-service frontend; do
+            docker buildx build "$service" --push --platform linux/amd64 \
+              --tag "$REGISTRY/service-desk-$service:$TAG"
+          done
+
+      - uses: azure/setup-helm@v5
+
+      - name: Connect to the EKS cluster
+        run: aws eks update-kubeconfig --name "${{ vars.EKS_CLUSTER_NAME }}" --region "${{ vars.AWS_REGION }}"
+
+      - name: Cluster setup (load balancer class, default storage)
+        run: kubectl apply -f deploy/aws/cluster-setup.yaml
+
+      - name: Give the cluster the RDS admin login
+        run: |
+          kubectl create namespace service-desk --dry-run=client -o yaml | kubectl apply -f -
+          secret=$(aws secretsmanager get-secret-value --secret-id "${{ vars.RDS_MASTER_SECRET_ARN }}" --query SecretString --output text)
+          kubectl create secret generic service-desk-db-admin -n service-desk \
+            --from-literal=username="$(echo "$secret" | jq -r .username)" \
+            --from-literal=password="$(echo "$secret" | jq -r .password)" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install service-desk deploy/helm/service-desk \
+            --namespace service-desk \
+            -f deploy/helm/service-desk/values-aws.yaml \
+            --set images.api="$REGISTRY/service-desk-api:$TAG" \
+            --set images.notification="$REGISTRY/service-desk-notification-service:$TAG" \
+            --set images.web="$REGISTRY/service-desk-frontend:$TAG" \
+            --set hosts.app="${{ vars.APP_HOST }}" \
+            --set hosts.auth="${{ vars.AUTH_HOST }}" \
+            --set hosts.mail="${{ vars.MAIL_HOST }}" \
+            --set-string ingressAnnotations.alb\\.ingress\\.kubernetes\\.io/certificate-arn="${{ vars.ACM_CERTIFICATE_ARN }}" \
+            --set external.databaseHost="${{ vars.RDS_ENDPOINT }}" \
+            --set external.attachmentsBucket="${{ vars.ATTACHMENTS_BUCKET }}" \
+            --set external.s3Region="${{ vars.AWS_REGION }}" \
+            --set secrets.apiDbPassword="${{ secrets.API_DB_PASSWORD }}" \
+            --set secrets.notificationsDbPassword="${{ secrets.NOTIFICATIONS_DB_PASSWORD }}" \
+            --set secrets.keycloakDbPassword="${{ secrets.KEYCLOAK_DB_PASSWORD }}" \
+            --set secrets.keycloakAdminPassword="${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}" \
+            --wait --timeout 15m
+
+      - name: Show where it is running
+        run: kubectl get ingress -n service-desk

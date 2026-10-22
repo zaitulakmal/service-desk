@@ -1,0 +1,44 @@
+# Overrides for AWS (EKS Auto Mode). Deployed by .github/workflows/deploy-aws.yml,
+# which fills in the values Terraform produced (database endpoint, bucket, images).
+#
+# What changes compared with the laptop setup:
+#   Postgres      -> Amazon RDS (databases created by the db-init Job)
+#   Attachments   -> Amazon S3, accessed with the pod's IAM role (EKS Pod Identity)
+#   Ingress       -> AWS Application Load Balancer with HTTPS (ACM certificate)
+#   Kafka, Keycloak and Mailpit stay in the cluster to keep the monthly bill down.
+
+scheme: https
+hosts:
+  app: servicedesk.example.com
+  auth: auth.servicedesk.example.com
+  mail: mail.servicedesk.example.com
+
+ingressClassName: alb
+ingressAnnotations:
+  alb.ingress.kubernetes.io/scheme: internet-facing
+  alb.ingress.kubernetes.io/target-type: ip
+  alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+  alb.ingress.kubernetes.io/ssl-redirect: "443"
+  # alb.ingress.kubernetes.io/certificate-arn: set at deploy time
+
+images:
+  pullPolicy: Always
+
+infrastructure:
+  postgres:
+    enabled: false
+  rustfs:
+    enabled: false
+  kafka:
+    enabled: true
+  keycloak:
+    enabled: true
+  mailpit:
+    enabled: true
+
+external:
+  databaseHost: ""                       # Terraform output: rds_endpoint
+  databaseAdminSecret: service-desk-db-admin
+  s3Endpoint: ""                         # empty = real S3
+  s3Region: ap-southeast-1
+  attachmentsBucket: ""                  # Terraform output: attachments_bucket

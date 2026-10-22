@@ -1,0 +1,165 @@
+name: CI
+
+# Every push and pull request: unit + integration tests for each service, the web app's
+# checks, the Helm chart, and a full end-to-end run in a real browser.
+# On main, the container images are also published to GitHub Container Registry.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: api/pom.xml
+      # Testcontainers starts real Postgres, Kafka and RustFS in the runner's Docker.
+      - run: ./mvnw -B verify
+
+  notification-service:
+    name: Notification service tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: notification-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: notification-service/pom.xml
+      - run: ./mvnw -B verify
+
+  frontend:
+    name: Web app checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  helm:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - run: helm lint deploy/helm/service-desk
+      - name: Lint with the AWS settings
+        run: >
+          helm lint deploy/helm/service-desk -f deploy/helm/service-desk/values-aws.yaml
+          --set external.databaseHost=db.example.internal --set external.attachmentsBucket=example
+
+  e2e:
+    name: End-to-end (browser)
+    needs: [api, notification-service, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: "**/pom.xml"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Start Postgres, Keycloak, Kafka, Mailpit and RustFS
+        run: docker compose up -d
+      - name: Build the services
+        run: |
+          (cd api && ./mvnw -B -q package -DskipTests)
+          (cd notification-service && ./mvnw -B -q package -DskipTests)
+      - name: Start the services
+        run: |
+          curl -sf --retry 60 --retry-all-errors --retry-delay 2 -o /dev/null http://localhost:9000/health
+          nohup java -jar api/target/service-desk-api-*.jar > api.log 2>&1 &
+          nohup java -jar notification-service/target/notification-service-*.jar > notification.log 2>&1 &
+          curl -sf --retry 90 --retry-all-errors --retry-delay 2 -o /dev/null http://localhost:8080/actuator/health
+          curl -sf --retry 90 --retry-all-errors --retry-delay 2 -o /dev/null http://localhost:8081/actuator/health
+          curl -sf --retry 90 --retry-all-errors --retry-delay 2 -o /dev/null http://localhost:8180/realms/servicedesk/.well-known/openid-configuration
+      - name: Install the browser
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run the end-to-end tests
+        working-directory: frontend
+        run: npx playwright test
+      - name: Keep logs and traces if something failed
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-results
+          path: |
+            frontend/test-results
+            api.log
+            notification.log
+          retention-days: 7
+
+  images:
+    name: Publish images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [api, notification-service, frontend, helm, e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [api, notification-service, frontend]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/service-desk-${{ matrix.service }}
+          tags: |
+            type=sha
+            type=raw,value=latest
+      - uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.service }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}

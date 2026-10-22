@@ -1,0 +1,89 @@
+{{- if .Values.infrastructure.postgres.enabled }}
+{{- $name := printf "%s-postgres" (include "sd.name" .) -}}
+{{- $pg := .Values.infrastructure.postgres -}}
+# One Postgres with a database and user per service. On AWS this is replaced by RDS.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}-init
+  labels:
+    {{- include "sd.labels" . | nindent 4 }}
+stringData:
+  init.sql: |
+    CREATE USER notifications WITH PASSWORD '{{ .Values.secrets.notificationsDbPassword }}';
+    CREATE DATABASE notifications OWNER notifications;
+    CREATE USER keycloak WITH PASSWORD '{{ .Values.secrets.keycloakDbPassword }}';
+    CREATE DATABASE keycloak OWNER keycloak;
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sd.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ $pg.image }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: servicedesk
+            - name: POSTGRES_USER
+              value: servicedesk
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "sd.name" . }}-secrets, key: api-db-password } }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "servicedesk"] }
+            periodSeconds: 5
+          resources:
+            {{- toYaml $pg.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: init
+          secret:
+            secretName: {{ $name }}-init
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ $pg.storage }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sd.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+{{- end }}

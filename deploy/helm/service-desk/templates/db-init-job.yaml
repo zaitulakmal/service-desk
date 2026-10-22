@@ -1,0 +1,71 @@
+{{- if and (not .Values.infrastructure.postgres.enabled) .Values.external.databaseAdminSecret }}
+{{- $name := printf "%s-db-init" (include "sd.name" .) -}}
+# With a managed database (RDS) nobody runs the in-cluster init script, so this Job
+# creates a database and a login for each service. It is safe to run on every upgrade:
+# existing users and databases are kept, and passwords are brought up to date.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sd.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+stringData:
+  servicedesk: {{ .Values.secrets.apiDbPassword | quote }}
+  notifications: {{ .Values.secrets.notificationsDbPassword | quote }}
+  keycloak: {{ .Values.secrets.keycloakDbPassword | quote }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sd.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 4
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: psql
+          image: {{ .Values.infrastructure.postgres.image }}
+          env:
+            - name: PGHOST
+              value: {{ .Values.external.databaseHost }}
+            - name: PGDATABASE
+              value: postgres
+            - name: PGSSLMODE
+              value: require
+            - name: PGUSER
+              valueFrom: { secretKeyRef: { name: {{ .Values.external.databaseAdminSecret }}, key: username } }
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.external.databaseAdminSecret }}, key: password } }
+            {{- range $service := list "servicedesk" "notifications" "keycloak" }}
+            - name: PW_{{ upper $service }}
+              valueFrom: { secretKeyRef: { name: {{ $name }}, key: {{ $service }} } }
+            {{- end }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              for svc in servicedesk notifications keycloak; do
+                pw=$(eval echo "\$PW_$(echo $svc | tr a-z A-Z)")
+                psql -v ON_ERROR_STOP=1 -v svc="$svc" -v pw="$pw" <<'SQL'
+              SELECT format('CREATE ROLE %I LOGIN', :'svc') WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'svc') \gexec
+              SELECT format('ALTER ROLE %I PASSWORD %L', :'svc', :'pw') \gexec
+              -- On RDS the admin is not a superuser. Since Postgres 16 it needs the SET option on a
+              -- role (not just membership) to create a database owned by that role.
+              SELECT format('GRANT %I TO CURRENT_USER WITH SET TRUE', :'svc') WHERE :'svc' <> current_user AND NOT pg_has_role(current_user, :'svc', 'SET') \gexec
+              SELECT format('CREATE DATABASE %I OWNER %I', :'svc', :'svc') WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'svc') \gexec
+              SQL
+              done
+              echo "Databases ready"
+{{- end }}

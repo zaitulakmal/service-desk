@@ -1,0 +1,83 @@
+{{- $name := printf "%s-notification" (include "sd.name" .) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sd.labels" . | nindent 4 }}
+    app.kubernetes.io/name: notification-service
+spec:
+  replicas: {{ .Values.notification.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notification-service
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notification-service
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: /actuator/prometheus
+    spec:
+      securityContext:
+        {{- include "sd.podSecurity" . | nindent 8 }}
+      containers:
+        - name: notification-service
+          image: {{ .Values.images.notification }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: DB_URL
+              value: jdbc:postgresql://{{ include "sd.dbHost" . }}:5432/notifications
+            - name: DB_USERNAME
+              value: notifications
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "sd.name" . }}-secrets, key: notifications-db-password } }
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: {{ include "sd.kafka" . }}
+            - name: SMTP_HOST
+              value: {{ include "sd.smtpHost" . }}
+            - name: SMTP_PORT
+              value: {{ .Values.external.smtpPort | quote }}
+            - name: WEB_URL
+              value: {{ .Values.scheme }}://{{ .Values.hosts.app }}
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.notification.resources | nindent 12 }}
+          securityContext:
+            {{- include "sd.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sd.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: notification-service
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http

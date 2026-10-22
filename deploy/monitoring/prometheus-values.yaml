@@ -1,0 +1,21 @@
+# Prometheus server only, sized for a laptop cluster. It finds pods to scrape by their
+# prometheus.io/scrape annotations (the chart's built-in "kubernetes-pods" job), which
+# our Helm chart sets on the API and notification-service pods.
+alertmanager:
+  enabled: false
+prometheus-pushgateway:
+  enabled: false
+prometheus-node-exporter:
+  enabled: false
+kube-state-metrics:
+  enabled: false
+
+server:
+  retention: 3d
+  persistentVolume:
+    size: 2Gi
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }
+    limits: { memory: 512Mi }
+  global:
+    scrape_interval: 15s

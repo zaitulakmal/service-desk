@@ -1,0 +1,14 @@
+package com.zaitul.servicedesk.events;
+
+public enum TicketEventType {
+
+	TICKET_CREATED,
+	APPROVAL_REQUESTED,
+	TICKET_APPROVED,
+	TICKET_REJECTED,
+	TICKET_ASSIGNED,
+	STATUS_CHANGED,
+	COMMENT_ADDED,
+	SLA_BREACHED
+
+}

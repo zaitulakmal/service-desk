@@ -1,0 +1,52 @@
+{{- if .Values.infrastructure.mailpit.enabled }}
+{{- $name := printf "%s-mailpit" (include "sd.name" .) -}}
+# Catches every email the system sends and shows it at hosts.mail. Demo only:
+# a real deployment points SMTP at the company mail relay (e.g. Amazon SES).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sd.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mailpit
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mailpit
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: mailpit
+          image: {{ .Values.infrastructure.mailpit.image }}
+          ports:
+            - name: http
+              containerPort: 8025
+            - name: smtp
+              containerPort: 1025
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sd.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: mailpit
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: 8025
+      targetPort: http
+    - name: smtp
+      port: 1025
+      targetPort: smtp
+{{- end }}
