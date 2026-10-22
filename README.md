@@ -9,6 +9,18 @@ Built as a production-style system: four services, single sign-on, an event-driv
 backend, a Kubernetes deployment with autoscaling and monitoring, CI/CD, and
 infrastructure as code for AWS.
 
+## Demo
+
+One request from start to finish, recorded on the Kubernetes deployment: a staff member
+asks for system access, her manager and IT Security approve it, an agent picks it up and
+replies, the service manager sees it on the dashboard, and every step sends an email.
+
+![Demo: request, two approvals, agent reply, dashboard, emails](docs/demo.gif)
+
+[Watch in full quality (MP4, 1 minute)](docs/demo.mp4)
+
+## Screenshots
+
 | Agent queue | Ticket with a two-step approval |
 |---|---|
 | ![Agent queue](docs/screenshots/agent-queue.png) | ![Ticket approval](docs/screenshots/ticket-approval.png) |
