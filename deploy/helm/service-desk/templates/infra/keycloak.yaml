@@ -10,8 +10,34 @@ metadata:
   labels:
     {{- include "sd.labels" . | nindent 4 }}
 data:
+  {{- /*
+  The realm file lists the laptop addresses. Add this deployment's web addresses to the
+  web client's allowed redirects, and drop the script login client outside development.
+  */}}
+  {{- $realm := .Files.Get "files/servicedesk-realm.json" | fromJson }}
+  {{- $origins := splitList "," (include "sd.webOrigins" .) | compact }}
+  {{- $clients := list }}
+  {{- range $client := $realm.clients }}
+  {{- if eq $client.clientId "servicedesk-web" }}
+  {{- $redirects := $client.redirectUris }}
+  {{- $webOrigins := $client.webOrigins }}
+  {{- $logout := index $client.attributes "post.logout.redirect.uris" }}
+  {{- range $origin := $origins }}
+  {{- $redirects = append $redirects (printf "%s/*" $origin) }}
+  {{- $webOrigins = append $webOrigins $origin }}
+  {{- $logout = printf "%s##%s/*" $logout $origin }}
+  {{- end }}
+  {{- $_ := set $client "redirectUris" ($redirects | uniq) }}
+  {{- $_ := set $client "webOrigins" ($webOrigins | uniq) }}
+  {{- $_ := set $client.attributes "post.logout.redirect.uris" $logout }}
+  {{- end }}
+  {{- if or $.Values.infrastructure.keycloak.devClient (ne $client.clientId "servicedesk-dev-cli") }}
+  {{- $clients = append $clients $client }}
+  {{- end }}
+  {{- end }}
+  {{- $_ := set $realm "clients" $clients }}
   servicedesk-realm.json: |
-{{ .Files.Get "files/servicedesk-realm.json" | indent 4 }}
+{{ toPrettyJson $realm | indent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment

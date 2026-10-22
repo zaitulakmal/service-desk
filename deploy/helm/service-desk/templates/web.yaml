@@ -1,3 +1,4 @@
+{{- if .Values.web.enabled }}
 {{- $name := printf "%s-web" (include "sd.name" .) -}}
 # The web app's runtime settings. Same origin as the API (behind one ingress), so apiUrl is empty.
 apiVersion: v1
@@ -80,3 +81,4 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+{{- end }}

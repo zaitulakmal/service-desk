@@ -10,6 +10,17 @@ scheme: http
 ingressClassName: traefik
 ingressAnnotations: {}
 
+# HTTPS certificates from cert-manager (e.g. Let's Encrypt). Off for the laptop cluster.
+tls:
+  enabled: false
+  clusterIssuer: letsencrypt
+
+# Browser addresses outside the cluster that serve the web app (e.g. a Vercel deployment).
+# They are allowed to call the API (CORS) and to log in through Keycloak.
+webOrigins: []
+# Link used in emails. Defaults to the in-cluster web app at hosts.app.
+webUrl: ""
+
 images:
   api: service-desk/api:0.1.4
   notification: service-desk/notification-service:0.1.4
@@ -40,6 +51,8 @@ notification:
     limits: { memory: 448Mi }
 
 web:
+  # Turn off when the web app is hosted outside the cluster (list it under webOrigins).
+  enabled: true
   replicas: 1
   resources:
     requests: { cpu: 10m, memory: 16Mi }
@@ -87,6 +100,9 @@ infrastructure:
   keycloak:
     enabled: true
     image: quay.io/keycloak/keycloak:26.8.1
+    # The servicedesk-dev-cli client allows password logins from scripts. Keep it for
+    # local development only.
+    devClient: true
     resources:
       requests: { cpu: 100m, memory: 768Mi }
       limits: { memory: 1Gi }

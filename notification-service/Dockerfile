@@ -2,7 +2,7 @@
 
 # Build stage: compile and split the jar into layers. Tests run in CI, not here
 # (they need Docker for Testcontainers).
-FROM eclipse-temurin:21-jdk-alpine AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk-alpine AS build
 WORKDIR /workspace
 COPY mvnw pom.xml ./
 COPY .mvn .mvn

@@ -45,7 +45,7 @@ spec:
             - name: SMTP_PORT
               value: {{ .Values.external.smtpPort | quote }}
             - name: WEB_URL
-              value: {{ .Values.scheme }}://{{ .Values.hosts.app }}
+              value: {{ include "sd.webUrl" . }}
           startupProbe:
             httpGet: { path: /actuator/health/liveness, port: http }
             periodSeconds: 5

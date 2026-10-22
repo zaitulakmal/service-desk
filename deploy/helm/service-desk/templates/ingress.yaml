@@ -1,17 +1,32 @@
 # One public address for the app: /api goes to the API, everything else to the web app.
 # Same origin means no CORS in the browser and one TLS certificate in production.
+# When the web app is hosted elsewhere (web.enabled=false), only /api is served here.
+{{- $hosts := list .Values.hosts.app -}}
+{{- if .Values.infrastructure.keycloak.enabled }}{{ $hosts = append $hosts .Values.hosts.auth }}{{ end -}}
+{{- if .Values.infrastructure.mailpit.enabled }}{{ $hosts = append $hosts .Values.hosts.mail }}{{ end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "sd.name" . }}
   labels:
     {{- include "sd.labels" . | nindent 4 }}
-  {{- with .Values.ingressAnnotations }}
+  {{- if or .Values.ingressAnnotations .Values.tls.enabled }}
   annotations:
+    {{- with .Values.ingressAnnotations }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.tls.enabled }}
+    cert-manager.io/cluster-issuer: {{ .Values.tls.clusterIssuer }}
+    {{- end }}
   {{- end }}
 spec:
   ingressClassName: {{ .Values.ingressClassName }}
+  {{- if .Values.tls.enabled }}
+  tls:
+    - hosts:
+        {{- toYaml $hosts | nindent 8 }}
+      secretName: {{ include "sd.name" . }}-tls
+  {{- end }}
   rules:
     - host: {{ .Values.hosts.app }}
       http:
@@ -22,12 +37,14 @@ spec:
               service:
                 name: {{ include "sd.name" . }}-api
                 port: { name: http }
+          {{- if .Values.web.enabled }}
           - path: /
             pathType: Prefix
             backend:
               service:
                 name: {{ include "sd.name" . }}-web
                 port: { name: http }
+          {{- end }}
     {{- if .Values.infrastructure.keycloak.enabled }}
     - host: {{ .Values.hosts.auth }}
       http:

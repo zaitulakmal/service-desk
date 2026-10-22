@@ -49,6 +49,19 @@ http://{{ .Release.Name }}-keycloak:8080/realms/servicedesk/protocol/openid-conn
 {{- end -}}
 {{- end -}}
 
+{{/* Every browser origin the web app is served from: the in-cluster one plus webOrigins. */}}
+{{- define "sd.webOrigins" -}}
+{{- $origins := list -}}
+{{- if .Values.web.enabled -}}
+{{- $origins = append $origins (printf "%s://%s" .Values.scheme .Values.hosts.app) -}}
+{{- end -}}
+{{- concat $origins .Values.webOrigins | uniq | join "," -}}
+{{- end -}}
+
+{{- define "sd.webUrl" -}}
+{{ .Values.webUrl | default (printf "%s://%s" .Values.scheme .Values.hosts.app) }}
+{{- end -}}
+
 {{- define "sd.smtpHost" -}}
 {{- if .Values.infrastructure.mailpit.enabled -}}
 {{ .Release.Name }}-mailpit
